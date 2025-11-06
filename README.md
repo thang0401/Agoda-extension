@@ -5,10 +5,12 @@ Extension Chrome để tự động lấy dữ liệu giá phòng từ Agoda và
 ## ✨ Tính năng
 
 - ✅ Tự động lấy cookies khi truy cập Agoda
-- 💰 Lấy giá phòng từ API Agoda
+- 💰 Lấy giá phòng từ API Agoda (1 hotel)
+- 🚀 **MỚI**: Batch processing - Lấy giá tất cả 10 hotels cùng lúc
 - 📊 Export dữ liệu lên Google Sheets (tự động tạo sheet mới theo ngày)
 - 📋 Copy dữ liệu JSON
 - 🔄 Refresh cookies thủ công
+- 🎯 Headers đầy đủ (ag-analytics-session-id, ag-correlation-id, etc.)
 
 ## 📦 Cài đặt
 
@@ -55,14 +57,41 @@ const CONFIG = {
 
 ## 🚀 Sử dụng
 
-### Lấy dữ liệu từ Agoda
+### Cách 1: Lấy dữ liệu 1 hotel
 
 1. Đăng nhập vào [Agoda.com](https://www.agoda.com/)
 2. Truy cập trang chi tiết khách sạn (ví dụ hotel ID: 10308484)
 3. Click vào icon extension
 4. Click nút **"🔄 Refresh Cookies"** (lần đầu tiên)
-5. Click nút **"💰 Lấy Giá Phòng"**
+5. Click nút **"💰 Lấy Giá Phòng (Hotel hiện tại)"**
 6. Đợi extension lấy dữ liệu
+
+### Cách 2: Batch processing 10 hotels (MỚI) 🚀
+
+1. **Cấu hình danh sách hotels**:
+   - Mở file `hotelList.js`
+   - Thêm hotel ID, name và URL cho 10 hotels
+
+   ```javascript
+   {
+     id: 2,
+     hotelId: '36825405',
+     name: 'Tên hotel của bạn',
+     url: 'https://www.agoda.com/...'
+   }
+   ```
+
+2. **Chạy batch fetch**:
+   - Đăng nhập Agoda
+   - Click icon extension
+   - Click **"Refresh Cookies"**
+   - Click **"🚀 Lấy Tất Cả 10 Hotels"**
+   - Đợi 20-30 giây (có delay 1-2s giữa các requests)
+
+3. **Kết quả**:
+   - Hiển thị tổng hợp giá của tất cả hotels
+   - Số hotels thành công/thất bại
+   - Chi tiết giá từng hotel
 
 ### Export lên Google Sheets
 
@@ -107,12 +136,14 @@ https://www.agoda.com/api/cronos/property/BelowFoldParams/GetSecondaryData?count
 ```
 agoda-extension/
 ├── manifest.json          # Extension config
-├── background.js          # Service worker (API calls, cookies)
+├── background.js          # Service worker (API calls, cookies, batch processing)
 ├── content.js             # Content script (extract hotel info)
 ├── popup.html             # UI popup
 ├── popup.js               # Popup logic
-├── config.js              # Configuration (API keys)
+├── config.js              # Configuration (API keys, spreadsheet ID)
 ├── googleSheets.js        # Google Sheets API helper
+├── hotelList.js           # Danh sách 10 hotels cần crawl
+├── icons/                 # Extension icons (16, 48, 128)
 └── README.md              # Documentation
 ```
 

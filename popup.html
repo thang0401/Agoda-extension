@@ -60,6 +60,42 @@
       font-size: 12px;
       white-space: pre-wrap;
     }
+    .date-range-box {
+      background: #e3f2fd;
+      padding: 15px;
+      border-radius: 5px;
+      margin: 15px 0;
+      border: 2px solid #2196F3;
+    }
+    .date-range-box h3 {
+      margin: 0 0 10px 0;
+      font-size: 14px;
+      color: #1976D2;
+    }
+    .date-input-group {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .date-input-group label {
+      flex: 0 0 80px;
+      font-weight: bold;
+      font-size: 12px;
+    }
+    .date-input-group input[type="date"] {
+      flex: 1;
+      padding: 8px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font-size: 12px;
+    }
+    .date-info {
+      font-size: 11px;
+      color: #555;
+      margin-top: 8px;
+      font-style: italic;
+    }
   </style>
 </head>
 <body>
@@ -67,6 +103,21 @@
   
   <div id="loginStatus" class="status">
     Đang kiểm tra trạng thái...
+  </div>
+  
+  <div class="date-range-box">
+    <h3>📅 Chọn Khoảng Ngày</h3>
+    <div class="date-input-group">
+      <label>Từ ngày:</label>
+      <input type="date" id="startDate" required>
+    </div>
+    <div class="date-input-group">
+      <label>Đến ngày:</label>
+      <input type="date" id="endDate" required>
+    </div>
+    <div class="date-info" id="dateRangeInfo">
+      Chọn từ ngày và đến ngày để crawl giá cho từng ngày trong khoảng này.
+    </div>
   </div>
   
   <div class="info-box" id="hotelInfo" style="display: none;">
@@ -84,9 +135,8 @@
   </div>
   
   <button id="refreshCookies">🔄 Refresh Cookies</button>
-  <button id="extractPrice" disabled>💰 Lấy Giá Phòng</button>
+  <button id="batchFetchAll" disabled>🚀 Lấy Tất Cả Hotels</button>
   <button id="exportToSheets" style="display: none;">📊 Export to Google Sheets</button>
-  <button id="copyResult" style="display: none;">📋 Copy Kết Quả</button>
   
   <div id="exportStatus" style="display: none; margin-top: 10px;"></div>
   <div id="result"></div>

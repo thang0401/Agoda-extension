@@ -5,7 +5,53 @@ let latestResponseData = null;
 document.addEventListener('DOMContentLoaded', async () => {
   await checkStatus();
   await loadHotelInfo();
+  initializeDateInputs();
 });
+
+// Initialize date inputs với default values
+function initializeDateInputs() {
+  const startDateInput = document.getElementById('startDate');
+  const endDateInput = document.getElementById('endDate');
+  const dateRangeInfo = document.getElementById('dateRangeInfo');
+  
+  // Set default: từ hôm nay đến 7 ngày sau
+  const today = new Date();
+  const sevenDaysLater = new Date();
+  sevenDaysLater.setDate(today.getDate() + 7);
+  
+  startDateInput.valueAsDate = today;
+  endDateInput.valueAsDate = sevenDaysLater;
+  
+  // Update info khi thay đổi date
+  function updateDateRangeInfo() {
+    const start = new Date(startDateInput.value);
+    const end = new Date(endDateInput.value);
+    
+    if (startDateInput.value && endDateInput.value) {
+      if (end < start) {
+        dateRangeInfo.innerHTML = '⚠️ Ngày kết thúc phải sau ngày bắt đầu!';
+        dateRangeInfo.style.color = '#d32f2f';
+        return;
+      }
+      
+      const dayCount = Math.ceil((end - start) / (1000 * 60 * 60 * 24)) + 1;
+      const hotelCount = window.HOTEL_LIST?.filter(h => h.hotelId).length || 5;
+      const totalRequests = dayCount * hotelCount;
+      
+      dateRangeInfo.innerHTML = `
+        📊 Sẽ crawl <strong>${dayCount} ngày</strong> × <strong>${hotelCount} hotels</strong> = <strong>${totalRequests} requests</strong><br>
+        ⏱️ Ước tính: ${Math.ceil(totalRequests * 3 / 60)} phút (với delay 3s/request)
+      `;
+      dateRangeInfo.style.color = '#555';
+    }
+  }
+  
+  startDateInput.addEventListener('change', updateDateRangeInfo);
+  endDateInput.addEventListener('change', updateDateRangeInfo);
+  
+  // Update info ngay lập tức
+  updateDateRangeInfo();
+}
 
 // Kiểm tra login status và cookies
 async function checkStatus() {
@@ -38,7 +84,7 @@ async function checkStatus() {
         <small>Cookies: ${cookieCount} cookies<br>
         Cập nhật: ${result.lastUpdate ? new Date(result.lastUpdate).toLocaleString('vi-VN') : 'Chưa cập nhật'}</small>
       `;
-      document.getElementById('extractPrice').disabled = false;
+      document.getElementById('batchFetchAll').disabled = false;
     } else {
       statusDiv.className = 'status error';
       statusDiv.innerHTML = `
@@ -131,100 +177,6 @@ document.getElementById('refreshCookies').addEventListener('click', async () => 
   }
 });
 
-// Lấy giá phòng
-document.getElementById('extractPrice').addEventListener('click', async () => {
-  const button = document.getElementById('extractPrice');
-  const resultDiv = document.getElementById('result');
-  
-  button.disabled = true;
-  button.textContent = '⏳ Đang lấy dữ liệu...';
-  resultDiv.textContent = 'Đang xử lý...';
-  
-  if (typeof chrome === 'undefined' || !chrome.runtime) {
-    resultDiv.textContent = '❌ Extension chưa được load đúng cách';
-    button.textContent = '💰 Lấy Giá Phòng';
-    button.disabled = false;
-    return;
-  }
-  
-  try {
-    if (!currentHotelInfo || !currentHotelInfo.hotelId) {
-      throw new Error('Không tìm thấy thông tin khách sạn. Vui lòng vào trang chi tiết khách sạn.');
-    }
-    
-    // Build API params
-    const params = {
-      hotel_id: currentHotelInfo.hotelId,
-      checkIn: currentHotelInfo.checkIn || '2025-11-10',
-      adults: currentHotelInfo.adults || '2',
-      children: currentHotelInfo.children || '0',
-      rooms: currentHotelInfo.rooms || '1',
-      countryId: '38',
-      currencyCode: 'VND',
-      finalPriceView: '1',
-      los: '1',
-      // Thêm referer từ current URL của hotel page
-      referer: currentHotelInfo.currentUrl || 'https://www.agoda.com/'
-    };
-    
-    console.log('📤 Sending params:', params);
-    
-    // Gọi background script để fetch
-    const response = await chrome.runtime.sendMessage({
-      action: 'fetchPrice',
-      url: 'https://www.agoda.com/api/cronos/property/BelowFoldParams/GetSecondaryData',
-      params: params
-    });
-    
-    if (response.success) {
-      // Lấy thông tin giá
-      const data = response.data;
-      const roomGrid = data.roomGridData;
-      
-      let priceInfo = 'GIÁ PHÒNG:\n\n';
-      
-      if (roomGrid && roomGrid.masterRooms) {
-        roomGrid.masterRooms.forEach((room, index) => {
-          // Lấy giá từ room rate đầu tiên nếu có
-          const rate = room.roomRates && room.roomRates[0];
-          const displayPrice = rate?.displayPrice || room.cheapestPrice || 0;
-          const crossedPrice = rate?.crossedOutPrice || room.beforeDiscountPrice || displayPrice;
-          
-          // Tính discount percentage
-          let discount = 0;
-          if (crossedPrice > displayPrice && crossedPrice > 0) {
-            discount = Math.round(((crossedPrice - displayPrice) / crossedPrice) * 100);
-          }
-          
-          priceInfo += `${index + 1}. ${room.name}\n`;
-          priceInfo += `   Giá: ${Math.round(displayPrice).toLocaleString('vi-VN')} ₫\n`;
-          priceInfo += `   Giá gốc: ${Math.round(crossedPrice).toLocaleString('vi-VN')} ₫\n`;
-          priceInfo += `   Giảm giá: ${discount}%\n\n`;
-        });
-      }
-      
-      resultDiv.textContent = priceInfo;
-      document.getElementById('copyResult').style.display = 'block';
-      
-      // Lưu kết quả để copy và export
-      resultDiv.dataset.fullData = JSON.stringify(data, null, 2);
-      latestResponseData = data;
-      
-      // Hiển thị nút Export to Sheets
-      document.getElementById('exportToSheets').style.display = 'block';
-      
-    } else {
-      throw new Error(response.error);
-    }
-    
-  } catch (error) {
-    resultDiv.textContent = 'Lỗi: ' + error.message;
-  } finally {
-    button.textContent = 'Lấy Giá Phòng';
-    button.disabled = false;
-  }
-});
-
 // Export to Google Sheets
 document.getElementById('exportToSheets').addEventListener('click', async () => {
   const button = document.getElementById('exportToSheets');
@@ -278,16 +230,128 @@ document.getElementById('exportToSheets').addEventListener('click', async () => 
   }
 });
 
-// Copy kết quả
-document.getElementById('copyResult').addEventListener('click', () => {
+// Batch fetch tất cả hotels
+document.getElementById('batchFetchAll').addEventListener('click', async () => {
+  const button = document.getElementById('batchFetchAll');
   const resultDiv = document.getElementById('result');
-  const fullData = resultDiv.dataset.fullData || resultDiv.textContent;
   
-  navigator.clipboard.writeText(fullData).then(() => {
-    const button = document.getElementById('copyResult');
-    button.textContent = '✅ Đã copy!';
-    setTimeout(() => {
-      button.textContent = '📋 Copy Kết Quả';
-    }, 2000);
-  });
+  // Lấy date range
+  const startDateInput = document.getElementById('startDate');
+  const endDateInput = document.getElementById('endDate');
+  
+  if (!startDateInput.value || !endDateInput.value) {
+    alert('⚠️ Vui lòng chọn ngày bắt đầu và ngày kết thúc!');
+    return;
+  }
+  
+  const startDate = new Date(startDateInput.value);
+  const endDate = new Date(endDateInput.value);
+  
+  if (endDate < startDate) {
+    alert('⚠️ Ngày kết thúc phải sau ngày bắt đầu!');
+    return;
+  }
+  
+  // Generate array of dates
+  const dates = [];
+  const currentDate = new Date(startDate);
+  while (currentDate <= endDate) {
+    dates.push(new Date(currentDate));
+    currentDate.setDate(currentDate.getDate() + 1);
+  }
+  
+  const hotelCount = window.HOTEL_LIST?.filter(h => h.hotelId).length || 5;
+  const totalRequests = dates.length * hotelCount;
+  const estimatedMinutes = Math.ceil(totalRequests * 3 / 60);
+  
+  const confirmMsg = `📊 Sẽ crawl:\n` +
+    `• ${dates.length} ngày (${startDateInput.value} đến ${endDateInput.value})\n` +
+    `• ${hotelCount} hotels\n` +
+    `• Tổng: ${totalRequests} requests\n` +
+    `• Thời gian ước tính: ${estimatedMinutes} phút\n\n` +
+    `Bạn có muốn tiếp tục?`;
+  
+  if (!confirm(confirmMsg)) {
+    return;
+  }
+  
+  button.disabled = true;
+  button.textContent = '⏳ Đang lấy dữ liệu...';
+  resultDiv.textContent = `Đang xử lý batch fetch...\n`;
+  resultDiv.textContent += `📅 ${dates.length} ngày × 🏨 ${hotelCount} hotels = 📊 ${totalRequests} requests\n\n`;
+  
+  if (typeof chrome === 'undefined' || !chrome.runtime) {
+    resultDiv.textContent = '❌ Extension chưa được load đúng cách';
+    button.textContent = '🚀 Lấy Tất Cả Hotels';
+    button.disabled = false;
+    return;
+  }
+  
+  try {
+    // Lấy base params - THÊM ĐẦY ĐỦ PARAMS
+    const baseParams = {
+      adults: currentHotelInfo?.adults || '2',
+      children: currentHotelInfo?.children || '0',
+      rooms: currentHotelInfo?.rooms || '1',
+      countryId: '38',
+      currencyCode: 'VND',
+      finalPriceView: '1',
+      los: '1',
+      travellerType: '1',
+      isShowMobileAppPrice: 'false',
+      isFreeOccSearch: 'false',
+      referer: 'https://www.agoda.com/'
+    };
+    
+    // Format dates array to YYYY-MM-DD strings
+    const dateStrings = dates.map(d => {
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    });
+    
+    console.log('📤 Starting batch fetch with dates:', dateStrings);
+    resultDiv.textContent += 'Đang gọi API...\n';
+    
+    // Gọi background script để batch fetch với date range
+    const response = await chrome.runtime.sendMessage({
+      action: 'batchFetchAllHotelsWithDates',
+      params: baseParams,
+      dates: dateStrings
+    });
+    
+    if (response.success) {
+      // Hiển thị kết quả - CHỈ SUMMARY
+      let summaryText = `\n🎉 HOÀN THÀNH!\n\n`;
+      summaryText += `Tổng số hotels: ${response.summary.total}\n`;
+      summaryText += `Thành công: ${response.summary.success}\n`;
+      summaryText += `Thất bại: ${response.summary.failed}`;
+      
+      resultDiv.textContent = summaryText;
+      
+      // Lưu kết quả để export
+      latestResponseData = {
+        batchResults: response.results,
+        summary: response.summary,
+        timestamp: new Date().toISOString()
+      };
+      
+      document.getElementById('exportToSheets').style.display = 'block';
+      
+      button.textContent = '✅ Hoàn thành!';
+      setTimeout(() => {
+        button.textContent = '🚀 Lấy Tất Cả Hotels';
+        button.disabled = false;
+      }, 3000);
+      
+    } else {
+      throw new Error(response.error || 'Unknown error');
+    }
+    
+  } catch (error) {
+    resultDiv.textContent = '❌ Lỗi: ' + error.message;
+    button.textContent = '🚀 Lấy Tất Cả Hotels';
+    button.disabled = false;
+  }
 });

@@ -1,46 +1,41 @@
-// Google Sheets API Helper
+// Google Sheets API Helper - Using Apps Script
 class GoogleSheetsAPI {
-  constructor(apiKey, spreadsheetId) {
-    this.apiKey = apiKey;
+  constructor(appsScriptUrl, spreadsheetId) {
+    this.appsScriptUrl = appsScriptUrl;
     this.spreadsheetId = spreadsheetId;
-    this.baseUrl = 'https://sheets.googleapis.com/v4/spreadsheets';
   }
 
   // Tạo sheet mới với tên là ngày hiện tại
   async createNewSheet(sheetName) {
-    const url = `${this.baseUrl}/${this.spreadsheetId}:batchUpdate?key=${this.apiKey}`;
-    
-    const request = {
-      requests: [{
-        addSheet: {
-          properties: {
-            title: sheetName,
-            gridProperties: {
-              rowCount: 1000,
-              columnCount: 20
-            }
-          }
-        }
-      }]
-    };
-
     try {
-      const response = await fetch(url, {
+      const response = await fetch(this.appsScriptUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify(request)
+        body: JSON.stringify({
+          action: 'createSheet',
+          sheetName: sheetName
+        }),
+        redirect: 'follow'
       });
 
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(`Failed to create sheet: ${error.error.message}`);
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
 
       const result = await response.json();
-      const sheetId = result.replies[0].addSheet.properties.sheetId;
-      return { success: true, sheetId, sheetName };
+      
+      if (!result.success) {
+        throw new Error(result.error || 'Unknown error');
+      }
+
+      return { 
+        success: true, 
+        sheetId: result.sheetId, 
+        sheetName: result.sheetName 
+      };
+      
     } catch (error) {
       console.error('Error creating sheet:', error);
       return { success: false, error: error.message };
@@ -49,26 +44,32 @@ class GoogleSheetsAPI {
 
   // Ghi dữ liệu vào sheet
   async writeData(sheetName, data) {
-    const range = `${sheetName}!A1`;
-    const url = `${this.baseUrl}/${this.spreadsheetId}/values/${range}:append?valueInputOption=RAW&key=${this.apiKey}`;
-
     try {
-      const response = await fetch(url, {
+      const response = await fetch(this.appsScriptUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
+          action: 'writeData',
+          sheetName: sheetName,
           values: data
-        })
+        }),
+        redirect: 'follow'
       });
 
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(`Failed to write data: ${error.error.message}`);
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const result = await response.json();
+      
+      if (!result.success) {
+        throw new Error(result.error || 'Unknown error');
       }
 
       return { success: true };
+      
     } catch (error) {
       console.error('Error writing data:', error);
       return { success: false, error: error.message };
@@ -92,10 +93,6 @@ class GoogleSheetsAPI {
       'Original Price (VND)',
       'Discount (%)',
       'Currency',
-      'Adults',
-      'Children',
-      'Rooms',
-      'Supplier',
       'Available Rooms',
       'Max Occupancy'
     ]);
@@ -109,34 +106,36 @@ class GoogleSheetsAPI {
         // Lấy room rate đầu tiên (cheapest)
         const roomRate = room.roomRates && room.roomRates.length > 0 ? room.roomRates[0] : null;
         
-        // Get prices
-        const displayPrice = roomRate?.displayPrice || room.cheapestPrice || 0;
+        // Get prices - SỬ DỤNG FIELD ĐÚNG
+        // formattedAgodaPrice = giá sau discount (giá user thấy trên web)
+        // crossedOutPrice = giá gốc trước discount
+        const displayPrice = roomRate?.formattedAgodaPrice || roomRate?.displayPrice || room.cheapestPrice || 0;
         const crossedPrice = roomRate?.crossedOutPrice || room.beforeDiscountPrice || displayPrice;
         
-        // Calculate discount percentage
-        let discount = 0;
-        if (crossedPrice > displayPrice && crossedPrice > 0) {
+        // Get discount - SỬ DỤNG FIELD ĐÚNG
+        // discountPercentage = % discount dạng số (VD: 73)
+        // percentageDiscountNumber = string "73% off" (KHÔNG dùng)
+        let discount = roomRate?.discountPercentage || 0;
+        
+        // Fallback: tính discount nếu không có field
+        if (discount === 0 && crossedPrice > displayPrice && crossedPrice > 0) {
           discount = Math.round(((crossedPrice - displayPrice) / crossedPrice) * 100);
         }
         
         rows.push([
           timestamp,
-          responseData.propertyId || 'N/A',
-          responseData.propertyName || 'N/A',
-          responseData.checkIn || 'N/A',
-          responseData.checkOut || 'N/A',
+          responseData.hotelId || responseData.propertyId || 'N/A',
+          responseData.hotelListName || responseData.hotelInfo?.name || responseData.propertyName || 'N/A',
+          responseData.hotelSearchCriteria?.checkInDate || responseData.checkIn || 'N/A',
+          responseData.hotelSearchCriteria?.checkOutDate || responseData.checkOut || 'N/A',
           room.name || 'N/A',
-          room.masterRoomId || 'N/A',
+          roomRate?.roomId || room.roomId || room.masterRoomId || 'N/A',
           Math.round(displayPrice),
           Math.round(crossedPrice),
           discount,
           responseData.currencyCode || 'VND',
-          responseData.adults || 2,
-          responseData.children || 0,
-          responseData.rooms || 1,
-          roomRate?.supplierId || 'N/A',
-          room.availableRooms || 'N/A',
-          room.maxOccupancy || 'N/A'
+          roomRate?.availableRooms || room.availableRooms || 'N/A',
+          roomRate?.maxOccupancy || room.maxOccupancy || 'N/A'
         ]);
       });
     } else {
@@ -177,8 +176,15 @@ class GoogleSheetsAPI {
       return createResult;
     }
 
-    // Format data
-    const formattedData = this.formatAgodaData(responseData);
+    // Format data - check if batch results or single hotel
+    let formattedData;
+    if (responseData.batchResults) {
+      // Batch results - merge tất cả hotels
+      formattedData = this.formatBatchData(responseData.batchResults);
+    } else {
+      // Single hotel
+      formattedData = this.formatAgodaData(responseData);
+    }
 
     // Ghi data vào sheet
     const writeResult = await this.writeData(sheetName, formattedData);
@@ -192,6 +198,71 @@ class GoogleSheetsAPI {
       rowCount: formattedData.length - 1, // Không tính header
       url: `https://docs.google.com/spreadsheets/d/${this.spreadsheetId}/edit#gid=${createResult.sheetId}`
     };
+  }
+
+  // Format batch data từ nhiều hotels
+  formatBatchData(batchResults) {
+    const rows = [];
+    
+    // Header row
+    rows.push([
+      'Timestamp',
+      'Hotel ID',
+      'Hotel Name',
+      'Check In',
+      'Check Out',
+      'Room Name',
+      'Room ID',
+      'Price (VND)',
+      'Original Price (VND)',
+      'Discount (%)',
+      'Currency',
+      'Available Rooms',
+      'Max Occupancy'
+    ]);
+
+    // Timestamp
+    const timestamp = new Date().toLocaleString('vi-VN');
+    
+    // Loop through each hotel
+    batchResults.forEach(responseData => {
+      if (responseData.roomGridData && responseData.roomGridData.masterRooms) {
+        responseData.roomGridData.masterRooms.forEach(room => {
+          const roomRate = room.roomRates && room.roomRates.length > 0 ? room.roomRates[0] : null;
+          
+          // Get prices - SỬ DỤNG FIELD ĐÚNG
+          const displayPrice = roomRate?.formattedAgodaPrice || roomRate?.displayPrice || room.cheapestPrice || 0;
+          const crossedPrice = roomRate?.crossedOutPrice || room.beforeDiscountPrice || displayPrice;
+          
+          // Get discount - SỬ DỤNG FIELD ĐÚNG
+          // discountPercentage = % discount dạng số (VD: 73)
+          let discount = roomRate?.discountPercentage || 0;
+          
+          // Fallback: tính discount nếu không có field
+          if (discount === 0 && crossedPrice > displayPrice && crossedPrice > 0) {
+            discount = Math.round(((crossedPrice - displayPrice) / crossedPrice) * 100);
+          }
+          
+          rows.push([
+            timestamp,
+            responseData.hotelId || responseData.propertyId || 'N/A',
+            responseData.hotelListName || responseData.hotelInfo?.name || responseData.propertyName || 'N/A',
+            responseData.hotelSearchCriteria?.checkInDate || responseData.checkIn || 'N/A',
+            responseData.hotelSearchCriteria?.checkOutDate || responseData.checkOut || 'N/A',
+            room.name || 'N/A',
+            roomRate?.roomId || room.roomId || room.masterRoomId || 'N/A',
+            Math.round(displayPrice),
+            Math.round(crossedPrice),
+            discount,
+            responseData.currencyCode || 'VND',
+            roomRate?.availableRooms || room.availableRooms || 'N/A',
+            roomRate?.maxOccupancy || room.maxOccupancy || 'N/A'
+          ]);
+        });
+      }
+    });
+
+    return rows;
   }
 }
 
