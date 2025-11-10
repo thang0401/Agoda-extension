@@ -200,6 +200,57 @@ class GoogleSheetsAPI {
     };
   }
 
+  // Append data vào sheet cố định (không tạo sheet mới)
+  async appendToSheet(responseData, targetSheetName) {
+    try {
+      // Format data - check if batch results or single hotel
+      let formattedData;
+      if (responseData.batchResults) {
+        // Batch results - merge tất cả hotels
+        formattedData = this.formatBatchData(responseData.batchResults);
+      } else {
+        // Single hotel
+        formattedData = this.formatAgodaData(responseData);
+      }
+
+      // Append data vào sheet
+      const response = await fetch(this.appsScriptUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          action: 'appendData',
+          sheetName: targetSheetName,
+          values: formattedData
+        }),
+        redirect: 'follow'
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const result = await response.json();
+      
+      if (!result.success) {
+        throw new Error(result.error || 'Unknown error');
+      }
+
+      return {
+        success: true,
+        sheetName: targetSheetName,
+        rowCount: result.rowsWritten,
+        totalRows: result.totalRows,
+        url: `https://docs.google.com/spreadsheets/d/${this.spreadsheetId}/edit`
+      };
+      
+    } catch (error) {
+      console.error('Error appending data:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
   // Format batch data từ nhiều hotels
   formatBatchData(batchResults) {
     const rows = [];

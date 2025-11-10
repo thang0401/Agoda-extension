@@ -19,6 +19,10 @@ function doPost(e) {
       return writeData(spreadsheet, data.sheetName, data.values);
     }
     
+    if (action === 'appendData') {
+      return appendData(spreadsheet, data.sheetName, data.values);
+    }
+    
     return ContentService.createTextOutput(JSON.stringify({
       success: false,
       error: 'Unknown action: ' + action
@@ -68,6 +72,50 @@ function writeData(spreadsheet, sheetName, values) {
     return ContentService.createTextOutput(JSON.stringify({
       success: true,
       rowsWritten: values.length
+    })).setMimeType(ContentService.MimeType.JSON);
+    
+  } catch (error) {
+    return ContentService.createTextOutput(JSON.stringify({
+      success: false,
+      error: error.toString()
+    })).setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+// Append data vào cuối sheet (không tạo sheet mới)
+function appendData(spreadsheet, sheetName, values) {
+  try {
+    let sheet = spreadsheet.getSheetByName(sheetName);
+    
+    // Nếu sheet chưa tồn tại, tạo mới
+    if (!sheet) {
+      sheet = spreadsheet.insertSheet(sheetName);
+    }
+    
+    // Lấy dòng cuối cùng có data
+    const lastRow = sheet.getLastRow();
+    
+    // Nếu sheet trống (lastRow = 0), ghi từ A1 (bao gồm header)
+    // Nếu đã có data, append từ dòng tiếp theo (bỏ header)
+    let dataToWrite = values;
+    let startRow = 1;
+    
+    if (lastRow > 0) {
+      // Sheet đã có data, bỏ header row (row đầu tiên)
+      dataToWrite = values.slice(1);
+      startRow = lastRow + 1;
+    }
+    
+    // Ghi data
+    if (dataToWrite.length > 0) {
+      const range = sheet.getRange(startRow, 1, dataToWrite.length, dataToWrite[0].length);
+      range.setValues(dataToWrite);
+    }
+    
+    return ContentService.createTextOutput(JSON.stringify({
+      success: true,
+      rowsWritten: dataToWrite.length,
+      totalRows: sheet.getLastRow()
     })).setMimeType(ContentService.MimeType.JSON);
     
   } catch (error) {

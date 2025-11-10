@@ -137,8 +137,9 @@ async function exportToGoogleSheets(responseData) {
     // Tạo instance của GoogleSheetsAPI với Apps Script URL
     const sheetsAPI = new GoogleSheetsAPI(CONFIG.APPS_SCRIPT_URL, CONFIG.SPREADSHEET_ID);
     
-    // Export data
-    const result = await sheetsAPI.exportToNewSheet(responseData);
+    // Append data vào sheet cố định thay vì tạo sheet mới
+    const targetSheetName = CONFIG.TARGET_SHEET_NAME || 'AgodaData';
+    const result = await sheetsAPI.appendToSheet(responseData, targetSheetName);
     
     return result;
   } catch (error) {

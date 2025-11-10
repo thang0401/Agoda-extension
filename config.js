@@ -3,8 +3,8 @@ const CONFIG = {
   // Google Apps Script Web App URL
   // Deploy Apps Script → Copy Web App URL
   // Thay thế URL bên dưới bằng URL của bạn
-  APPS_SCRIPT_URL: 'https://script.google.com/macros/s/AKfycbyRg-0Zh0-3MgovtQVFWd-5A9E5b92KYIP5C6c2CFJoG89xd-nJew0aU0pc9FM_xf5-pQ/exec',
-  
+  APPS_SCRIPT_URL: 'https://script.google.com/macros/s/AKfycbxMAjqKtdxTn1ob_gS-JlMxJBnQZA_127ZUTVK_bIYfHlgRj7HWBci_OsSoylIojtEeUA/exec',
+  TARGET_SHEET_NAME : 'AgodaData',
   // Spreadsheet ID (từ URL của Google Sheets)
   // https://docs.google.com/spreadsheets/d/1IQMhIBZBH0tIuZJJ5AmhfNjmB6bIqN1rbC9AE0ExFkw/edit
   SPREADSHEET_ID: '1IQMhIBZBH0tIuZJJ5AmhfNjmB6bIqN1rbC9AE0ExFkw',

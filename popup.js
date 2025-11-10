@@ -208,15 +208,16 @@ document.getElementById('exportToSheets').addEventListener('click', async () => 
     if (response.success) {
       statusDiv.className = 'status success';
       statusDiv.innerHTML = `
-        Export thành công!<br>
-        <small>Sheet: ${response.sheetName}<br>
-        Số phòng: ${response.rowCount}<br>
-        <a href="${response.url}" target="_blank">Mở Google Sheets</a></small>
+        ✅ Export thành công!<br>
+        <small>Sheet: <strong>${response.sheetName}</strong><br>
+        Đã thêm: <strong>${response.rowCount}</strong> rows<br>
+        Tổng dữ liệu: <strong>${response.totalRows}</strong> rows<br>
+        <a href="${response.url}" target="_blank" style="color: #0057B8; font-weight: bold;">📊 Mở Google Sheets</a></small>
       `;
       
-      button.textContent = 'Đã export!';
+      button.textContent = '✅ Đã export!';
       setTimeout(() => {
-        button.textContent = 'Export to Google Sheets';
+        button.textContent = '📊 Export to Google Sheets';
         button.disabled = false;
       }, 3000);
     } else {
@@ -312,7 +313,7 @@ document.getElementById('batchFetchAll').addEventListener('click', async () => {
     });
     
     console.log('📤 Starting batch fetch with dates:', dateStrings);
-    resultDiv.textContent += 'Đang gọi API...\n';
+    resultDiv.textContent += 'Loading...\n';
     
     // Gọi background script để batch fetch với date range
     const response = await chrome.runtime.sendMessage({

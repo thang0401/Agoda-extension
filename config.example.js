@@ -11,6 +11,13 @@ const CONFIG = {
   // https://docs.google.com/spreadsheets/d/1IQMhIBZBH0tIuZJJ5AmhfNjmB6bIqN1rbC9AE0ExFkw/edit
   SPREADSHEET_ID: '1IQMhIBZBH0tIuZJJ5AmhfNjmB6bIqN1rbC9AE0ExFkw',
   
+  // Tên sheet cố định để append data (thay vì tạo sheet mới mỗi lần)
+  TARGET_SHEET_NAME: 'AgodaData',
+  
+  // Apps Script Web App URL (sau khi deploy)
+  APPS_SCRIPT_URL: 'https://script.google.com/macros/s/YOUR_DEPLOYMENT_ID/exec',
+  
+  
   // Google Sheets API endpoint
   SHEETS_API_URL: 'https://sheets.googleapis.com/v4/spreadsheets'
 };
