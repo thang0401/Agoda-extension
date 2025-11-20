@@ -23,6 +23,7 @@ function doPost(e) {
       return appendData(spreadsheet, data.sheetName, data.values);
     }
     
+    
     return ContentService.createTextOutput(JSON.stringify({
       success: false,
       error: 'Unknown action: ' + action

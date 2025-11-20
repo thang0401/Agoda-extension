@@ -124,7 +124,53 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     sendResponse({ success: true, hotels: HOTEL_LIST });
     return true;
   }
+  
+  if (request.action === 'getBatchProgress') {
+    chrome.storage.local.get(['batchProgress', 'batchSummary'], (result) => {
+      console.log('🔍 getBatchProgress - Storage data:', result);
+      console.log('🔍 batchProgress:', result.batchProgress);
+      console.log('🔍 batchSummary:', result.batchSummary);
+      
+      sendResponse({
+        progress: result.batchProgress || null,
+        summary: result.batchSummary || null
+      });
+    });
+    return true;
+  }
+  
 });
+
+// Export single hotel data ngay lập tức
+async function exportSingleHotelData(hotelData) {
+  try {
+    // Kiểm tra config
+    if (!CONFIG.APPS_SCRIPT_URL || CONFIG.APPS_SCRIPT_URL === 'https://script.google.com/macros/s/YOUR_DEPLOYMENT_ID/exec') {
+      throw new Error('Chưa cấu hình Apps Script URL');
+    }
+    
+    console.log('📊 Exporting single hotel data:', hotelData.hotelListName, hotelData.checkInDate);
+    
+    // Tạo instance của GoogleSheetsAPI
+    const sheetsAPI = new GoogleSheetsAPI(CONFIG.APPS_SCRIPT_URL, CONFIG.SPREADSHEET_ID);
+    
+    // Format single hotel data như single response (không phải batch)
+    const singleHotelResponse = {
+      // Không có batchResults, chỉ có single hotel data
+      ...hotelData
+    };
+    
+    // Append single hotel data vào sheet
+    const targetSheetName = CONFIG.TARGET_SHEET_NAME || 'AgodaData';
+    const result = await sheetsAPI.appendToSheet(singleHotelResponse, targetSheetName);
+    
+    console.log('📊 Export result:', result);
+    return result;
+  } catch (error) {
+    console.error('❌ Export single hotel error:', error);
+    return { success: false, error: error.message };
+  }
+}
 
 // Export data to Google Sheets
 async function exportToGoogleSheets(responseData) {
@@ -348,15 +394,30 @@ async function batchFetchAllHotels(baseParams) {
   };
 }
 
-// Batch fetch tất cả hotels với date range
+// Batch fetch tất cả hotels với date range - Export ngay từng hotel
 async function batchFetchAllHotelsWithDates(baseParams, dates) {
-  const results = [];
   const errors = [];
+  let totalExported = 0;
   
   const activeHotels = HOTEL_LIST.filter(h => h.hotelId);
   const totalRequests = activeHotels.length * dates.length;
   
   console.log(`🚀 Bắt đầu batch fetch: ${activeHotels.length} hotels × ${dates.length} ngày = ${totalRequests} requests`);
+  console.log(`📊 Sẽ export ngay sau mỗi hotel để tránh storage quota`);
+  
+  const batchStartTime = Date.now();
+  
+  // Lưu progress vào storage (chỉ progress, không lưu results)
+  await chrome.storage.local.set({
+    batchProgress: {
+      isRunning: true,
+      current: 0,
+      total: totalRequests,
+      status: 'Đang bắt đầu...',
+      startTime: batchStartTime,
+      totalExported: 0
+    }
+  });
   
   let requestCount = 0;
   
@@ -380,6 +441,18 @@ async function batchFetchAllHotelsWithDates(baseParams, dates) {
       try {
         console.log(`📥 [${requestCount}/${totalRequests}] Hotel: ${hotel.name || hotel.hotelId} | Date: ${checkInDate}`);
         
+        // Update progress
+        await chrome.storage.local.set({
+          batchProgress: {
+            isRunning: true,
+            current: requestCount,
+            total: totalRequests,
+            status: `Đang crawl: ${hotel.name || hotel.hotelId} - ${checkInDate}`,
+            startTime: batchStartTime,
+            totalExported: totalExported
+          }
+        });
+        
         // Merge params với hotel ID và dates
         const params = {
           ...baseParams,
@@ -401,8 +474,65 @@ async function batchFetchAllHotelsWithDates(baseParams, dates) {
           response.data.hotelListName = hotel.name;
           response.data.checkInDate = checkInDate;
           response.data.checkOutDate = checkOutDate;
-          results.push(response.data);
-          console.log(`✅ [${requestCount}/${totalRequests}] Success`);
+          
+          console.log(`✅ [${requestCount}/${totalRequests}] Success - Exporting ngay...`);
+          
+          // CHECK XEM CÓ ROOM DATA KHÔNG
+          const hasRoomData = response.data.roomGridData && 
+                             response.data.roomGridData.masterRooms && 
+                             response.data.roomGridData.masterRooms.length > 0;
+          
+          if (hasRoomData) {
+            // EXPORT NGAY SAU KHI CRAWL THÀNH CÔNG
+            try {
+              console.log(`📊 Starting export for ${hotel.name} - ${checkInDate}`);
+              const exportResult = await exportSingleHotelData(response.data);
+              console.log(`📊 Export result:`, exportResult);
+              
+              if (exportResult.success) {
+                const rowsAdded = exportResult.rowCount || 1;
+                totalExported += rowsAdded;
+                console.log(`✅ Exported ${rowsAdded} rows - Total: ${totalExported}`);
+              } else {
+                console.error(`❌ Export failed: ${exportResult.error}`);
+                errors.push({
+                  hotel: hotel.name || hotel.hotelId,
+                  date: checkInDate,
+                  error: `Export failed: ${exportResult.error}`
+                });
+              }
+            } catch (exportError) {
+              console.error(`❌ Export error:`, exportError);
+              errors.push({
+                hotel: hotel.name || hotel.hotelId,
+                date: checkInDate,
+                error: `Export error: ${exportError.message}`
+              });
+            }
+          } else {
+            console.log(`⚠️ [${requestCount}/${totalRequests}] No room data - Export as "Hết phòng": ${hotel.name} - ${checkInDate}`);
+            
+            // Export hotel hết phòng
+            try {
+              const soldOutData = {
+                ...response.data,
+                hotelListId: hotel.id,
+                hotelListName: hotel.name,
+                checkInDate: checkInDate,
+                checkOutDate: checkOutDate,
+                isSoldOut: true // Flag để format khác
+              };
+              
+              const exportResult = await exportSingleHotelData(soldOutData);
+              if (exportResult.success) {
+                const rowsAdded = exportResult.rowCount || 1;
+                totalExported += rowsAdded;
+                console.log(`✅ Exported "Hết phòng" ${rowsAdded} rows - Total: ${totalExported}`);
+              }
+            } catch (exportError) {
+              console.error(`❌ Export sold out error:`, exportError);
+            }
+          }
         } else {
           errors.push({
             hotel: hotel.name || hotel.hotelId,
@@ -432,17 +562,43 @@ async function batchFetchAllHotelsWithDates(baseParams, dates) {
   
   console.log('\n🎉 Batch fetch hoàn thành:', {
     totalRequests: totalRequests,
-    success: results.length,
-    failed: errors.length
+    totalExported: totalExported,
+    errors: errors.length
   });
+  
+  // Chỉ lưu progress và summary (không lưu results để tránh quota)
+  const finalData = {
+    batchProgress: {
+      isRunning: false,
+      current: totalRequests,
+      total: totalRequests,
+      status: 'Hoàn thành!',
+      startTime: batchStartTime,
+      totalExported: totalExported
+    },
+    batchSummary: {
+      total: totalRequests,
+      exported: totalExported,
+      completed: true,
+      timestamp: new Date().toISOString(),
+      // Chỉ lưu errors thật (không phải hết phòng)
+      realErrors: errors.filter(e => !e.error.includes('No room data')).length,
+      soldOut: errors.filter(e => e.error.includes('No room data')).length,
+      errors: errors.slice(0, 5) // Chỉ lưu 5 errors đầu tiên
+    }
+  };
+  
+  console.log('💾 Saving final summary to storage:', finalData);
+  await chrome.storage.local.set(finalData);
+  console.log('✅ Final summary saved successfully');
   
   return {
     success: true,
-    results: results,
+    totalExported: totalExported,
     errors: errors,
     summary: {
       total: totalRequests,
-      success: results.length,
+      exported: totalExported,
       failed: errors.length
     }
   };

@@ -139,25 +139,21 @@ class GoogleSheetsAPI {
         ]);
       });
     } else {
-      // Nếu không có room data, thêm 1 row basic info
+      // Hotel hết phòng - export với thông tin "Hết phòng"
       rows.push([
         timestamp,
-        responseData.propertyId || 'N/A',
-        responseData.propertyName || 'N/A',
-        responseData.checkIn || 'N/A',
-        responseData.checkOut || 'N/A',
-        'No room data available',
+        responseData.hotelId || responseData.propertyId || 'N/A',
+        responseData.hotelListName || responseData.hotelInfo?.name || responseData.propertyName || 'N/A',
+        responseData.checkInDate || responseData.hotelSearchCriteria?.checkInDate || responseData.checkIn || 'N/A',
+        responseData.checkOutDate || responseData.hotelSearchCriteria?.checkOutDate || responseData.checkOut || 'N/A',
+        'Hết phòng',
         '-',
-        '-',
-        '-',
-        '-',
+        '', // Price trống
+        '', // Original price trống  
+        '', // Discount trống
         responseData.currencyCode || 'VND',
-        responseData.adults || 2,
-        responseData.children || 0,
-        responseData.rooms || 1,
-        '-',
-        '-',
-        '-'
+        '0', // Available Rooms = 0
+        '-'  // Max Occupancy
       ]);
     }
 
