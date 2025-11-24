@@ -102,20 +102,45 @@ class GoogleSheetsAPI {
     
     // Parse room data
     if (responseData.roomGridData && responseData.roomGridData.masterRooms) {
-      responseData.roomGridData.masterRooms.forEach(room => {
-        // Lấy room rate đầu tiên (cheapest)
-        const roomRate = room.roomRates && room.roomRates.length > 0 ? room.roomRates[0] : null;
+      console.log('🔍 DEBUG: Total masterRooms:', responseData.roomGridData.masterRooms.length);
+      
+      responseData.roomGridData.masterRooms.forEach((masterRoom, index) => {
+        console.log(`\n📌 MasterRoom ${index}:`, masterRoom.name);
+        console.log('  hasRoom:', masterRoom.hasRoom);
+        console.log('  rooms array:', masterRoom.rooms ? `Array(${masterRoom.rooms.length})` : 'NULL/UNDEFINED');
+        
+        // ⭐ rooms[0] CHÍNH LÀ rate object (không có roomRates con!)
+        if (!masterRoom.rooms || masterRoom.rooms.length === 0) {
+          console.log('  ❌ SKIPPED - No rooms array');
+          return;
+        }
+        
+        // Lấy first rate trong rooms array
+        const rate = masterRoom.rooms[0];
+        console.log('  rate object:', rate ? 'EXISTS' : 'NULL');
+        
+        // ⭐ Pricing nằm trong pricePopupViewModel
+        const pricing = rate.pricePopupViewModel;
+        console.log('  pricing.agodaPrice:', pricing?.agodaPrice);
+        console.log('  pricing.formattedAgodaPrice:', pricing?.formattedAgodaPrice);
+        
+        // ❌ SKIP nếu không có pricing (hết phòng thật sự)
+        if (!pricing || (!pricing.agodaPrice && !pricing.formattedAgodaPrice)) {
+          console.log('  ❌ SKIPPED - No pricing available');
+          return; // Không export phòng hết phòng
+        }
+        
+        console.log('  ✅ HAS pricing - Will export');
         
         // Get prices - SỬ DỤNG FIELD ĐÚNG
-        // formattedAgodaPrice = giá sau discount (giá user thấy trên web)
-        // crossedOutPrice = giá gốc trước discount
-        const displayPrice = roomRate?.formattedAgodaPrice || roomRate?.displayPrice || room.cheapestPrice || 0;
-        const crossedPrice = roomRate?.crossedOutPrice || room.beforeDiscountPrice || displayPrice;
+        // agodaPrice (number) = giá sau discount
+        // propertyCrossoutRatePrice = giá gốc trước discount
+        const displayPrice = pricing.agodaPrice || parseFloat(pricing.formattedAgodaPrice?.replace(/[.,]/g, '')) || 0;
+        const crossedPrice = pricing.propertyCrossoutRatePrice || displayPrice;
         
         // Get discount - SỬ DỤNG FIELD ĐÚNG
-        // discountPercentage = % discount dạng số (VD: 73)
-        // percentageDiscountNumber = string "73% off" (KHÔNG dùng)
-        let discount = roomRate?.discountPercentage || 0;
+        // discountPercentage = % discount dạng số (VD: 42)
+        let discount = rate.discountPercentage || 0;
         
         // Fallback: tính discount nếu không có field
         if (discount === 0 && crossedPrice > displayPrice && crossedPrice > 0) {
@@ -128,18 +153,24 @@ class GoogleSheetsAPI {
           responseData.hotelListName || responseData.hotelInfo?.name || responseData.propertyName || 'N/A',
           responseData.hotelSearchCriteria?.checkInDate || responseData.checkIn || 'N/A',
           responseData.hotelSearchCriteria?.checkOutDate || responseData.checkOut || 'N/A',
-          room.name || 'N/A',
-          roomRate?.roomId || room.roomId || room.masterRoomId || 'N/A',
+          masterRoom.name || 'N/A',
+          rate.id || masterRoom.id || 'N/A',
           Math.round(displayPrice),
           Math.round(crossedPrice),
           discount,
           responseData.currencyCode || 'VND',
-          roomRate?.availableRooms || room.availableRooms || 'N/A',
-          roomRate?.maxOccupancy || room.maxOccupancy || 'N/A'
+          rate.availability || 'N/A',
+          rate.maxOccupancy || masterRoom.maxOccupancy || 'N/A'
         ]);
       });
-    } else {
-      // Hotel hết phòng - export với thông tin "Hết phòng"
+      
+      console.log(`\n📊 RESULT: Created ${rows.length - 1} room rows (excluding header)`);
+    }
+    
+    // ⚠️ Nếu không có phòng nào được export (tất cả hết phòng hoặc không có masterRooms)
+    // → Export 1 row "Hết phòng" để không bỏ sót hotel
+    if (rows.length === 1) {
+      console.log('⚠️ No rooms exported - Adding "Hết phòng" row');
       rows.push([
         timestamp,
         responseData.hotelId || responseData.propertyId || 'N/A',
@@ -148,11 +179,11 @@ class GoogleSheetsAPI {
         responseData.checkOutDate || responseData.hotelSearchCriteria?.checkOutDate || responseData.checkOut || 'N/A',
         'Hết phòng',
         '-',
-        '', // Price trống
-        '', // Original price trống  
-        '', // Discount trống
+        0, // Price = 0
+        0, // Original price = 0
+        0, // Discount = 0
         responseData.currencyCode || 'VND',
-        '0', // Available Rooms = 0
+        0, // Available Rooms = 0
         '-'  // Max Occupancy
       ]);
     }
@@ -273,17 +304,32 @@ class GoogleSheetsAPI {
     
     // Loop through each hotel
     batchResults.forEach(responseData => {
+      const rowsBeforeHotel = rows.length; // Đánh dấu số rows trước khi xử lý hotel này
+      
       if (responseData.roomGridData && responseData.roomGridData.masterRooms) {
-        responseData.roomGridData.masterRooms.forEach(room => {
-          const roomRate = room.roomRates && room.roomRates.length > 0 ? room.roomRates[0] : null;
+        responseData.roomGridData.masterRooms.forEach(masterRoom => {
+          // ⭐ rooms[0] CHÍNH LÀ rate object (không có roomRates con!)
+          if (!masterRoom.rooms || masterRoom.rooms.length === 0) {
+            return; // Skip nếu không có rooms array
+          }
+          
+          const rate = masterRoom.rooms[0];
+          
+          // ⭐ Pricing nằm trong pricePopupViewModel
+          const pricing = rate.pricePopupViewModel;
+          
+          // ❌ SKIP nếu không có pricing (hết phòng thật sự)
+          if (!pricing || (!pricing.agodaPrice && !pricing.formattedAgodaPrice)) {
+            return; // Không export phòng hết phòng
+          }
           
           // Get prices - SỬ DỤNG FIELD ĐÚNG
-          const displayPrice = roomRate?.formattedAgodaPrice || roomRate?.displayPrice || room.cheapestPrice || 0;
-          const crossedPrice = roomRate?.crossedOutPrice || room.beforeDiscountPrice || displayPrice;
+          const displayPrice = pricing.agodaPrice || parseFloat(pricing.formattedAgodaPrice?.replace(/[.,]/g, '')) || 0;
+          const crossedPrice = pricing.propertyCrossoutRatePrice || displayPrice;
           
           // Get discount - SỬ DỤNG FIELD ĐÚNG
-          // discountPercentage = % discount dạng số (VD: 73)
-          let discount = roomRate?.discountPercentage || 0;
+          // discountPercentage = % discount dạng số (VD: 42)
+          let discount = rate.discountPercentage || 0;
           
           // Fallback: tính discount nếu không có field
           if (discount === 0 && crossedPrice > displayPrice && crossedPrice > 0) {
@@ -296,16 +342,36 @@ class GoogleSheetsAPI {
             responseData.hotelListName || responseData.hotelInfo?.name || responseData.propertyName || 'N/A',
             responseData.hotelSearchCriteria?.checkInDate || responseData.checkIn || 'N/A',
             responseData.hotelSearchCriteria?.checkOutDate || responseData.checkOut || 'N/A',
-            room.name || 'N/A',
-            roomRate?.roomId || room.roomId || room.masterRoomId || 'N/A',
+            masterRoom.name || 'N/A',
+            rate.id || masterRoom.id || 'N/A',
             Math.round(displayPrice),
             Math.round(crossedPrice),
             discount,
             responseData.currencyCode || 'VND',
-            roomRate?.availableRooms || room.availableRooms || 'N/A',
-            roomRate?.maxOccupancy || room.maxOccupancy || 'N/A'
+            rate.availability || 'N/A',
+            rate.maxOccupancy || masterRoom.maxOccupancy || 'N/A'
           ]);
         });
+      }
+      
+      // ⚠️ Nếu hotel này không export được phòng nào (tất cả hết phòng)
+      // → Export 1 row "Hết phòng" để không bỏ sót hotel
+      if (rows.length === rowsBeforeHotel) {
+        rows.push([
+          timestamp,
+          responseData.hotelId || responseData.propertyId || 'N/A',
+          responseData.hotelListName || responseData.hotelInfo?.name || responseData.propertyName || 'N/A',
+          responseData.checkInDate || responseData.hotelSearchCriteria?.checkInDate || responseData.checkIn || 'N/A',
+          responseData.checkOutDate || responseData.hotelSearchCriteria?.checkOutDate || responseData.checkOut || 'N/A',
+          'Hết phòng',
+          '-',
+          0, // Price = 0
+          0, // Original price = 0
+          0, // Discount = 0
+          responseData.currencyCode || 'VND',
+          0, // Available Rooms = 0
+          '-'  // Max Occupancy
+        ]);
       }
     });
 
