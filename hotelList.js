@@ -29,6 +29,12 @@ const HOTEL_LIST = [
     hotelId: '29216846',
     name: 'Chez Mimosa Local',
     url: 'https://www.agoda.com/vi-vn/chez-mimosa-local-alley/hotel/ho-chi-minh-city-vn.html'
+  },
+  {
+    id: 6,
+    hotelId: '13571664',
+    name: 'LA VELA SAIGON HOTEL',
+    url: 'https://www.agoda.com/vi-vn/la-vela-saigon-hotel/hotel/ho-chi-minh-city-vn.html'
   }
 ];
 
